@@ -1,0 +1,85 @@
+# SynkTime - System Architecture
+
+## Overview
+SynkTime is a comprehensive attendance management system with a hierarchical structure:
+- Empresas (Companies) → Negocios (Businesses) → Sedes (Locations) → Trabajadores (Employees)
+
+## Directory Structure
+```
+synktime/
+├── assets/
+│   ├── css/
+│   ├── js/
+│   └── img/
+├── config/
+│   └── db_connect.php
+├── includes/
+│   ├── header.php
+│   ├── footer.php
+│   ├── sidebar.php
+│   └── functions.php
+├── modules/
+│   ├── empleados/
+│   │   ├── index.php
+│   │   ├── crear.php
+│   │   ├── editar.php
+│   │   ├── eliminar.php
+│   │   └── consultar.php
+│   ├── asistencias/
+│   │   ├── index.php
+│   │   ├── consultar.php
+│   │   └── justificar.php
+│   ├── horarios/
+│   │   ├── index.php
+│   │   ├── crear.php
+│   │   ├── editar.php
+│   │   ├── eliminar.php
+│   │   └── asignar.php
+│   └── reportes/
+│       ├── index.php
+│       ├── diario.php
+│       ├── semanal.php
+│       └── mensual.php
+├── api/
+│   ├── empleados.php
+│   ├── asistencias.php
+│   ├── horarios.php
+│   └── reportes.php
+├── index.php
+└── login.php
+```
+
+## Technologies
+- Backend: PHP 8.1+
+- Database: MySQL (as per provided SQL schema)
+- Frontend: HTML5, CSS3, JavaScript
+- Libraries: 
+  - Chart.js for visualizations
+  - Bootstrap 5 for responsive design
+  - jQuery for AJAX and DOM manipulation
+  - DataTables for interactive tables
+
+## Authentication & Authorization Flow
+1. User logs in with credentials
+2. System validates against usuarios table
+3. Session stores user information including id_empresa, id_rol
+4. Access control middleware checks permissions for each module
+
+## Module Architecture
+Each module follows an MVC-like pattern:
+- Views in the module folders
+- Controllers in the API endpoints
+- Models integrated into API endpoints with clear separation of concerns
+
+## Data Flow
+1. Frontend sends AJAX requests to API endpoints
+2. API processes request, performs database operations
+3. Response returns in JSON format
+4. Frontend renders data and handles user interactions
+
+## Security Measures
+- Prepared statements for all database queries
+- Input validation and sanitization
+- CSRF protection tokens
+- Session management with secure cookies
+- Role-based access control
