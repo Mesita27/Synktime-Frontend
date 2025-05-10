@@ -244,7 +244,7 @@
             // Demo: Submit form on button click
             $('.login-btn').click(function(e) {
                 e.preventDefault();
-                window.location.href = 'index.php';
+                window.location.href = 'dashboard.php';
             });
         });
     </script>
