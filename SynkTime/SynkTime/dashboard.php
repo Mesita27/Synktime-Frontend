@@ -1,6 +1,41 @@
 <?php
+// Incluir la conexión a la base de datos
+require_once 'config/database.php';
 // Incluir controlador del dashboard
 require_once 'dashboard-controller.php';
+
+// Establecer la fecha específica para pruebas
+$fechaDashboard = '2025-06-15';
+
+// Obtener ID de empresa desde la sesión
+if (session_status() == PHP_SESSION_NONE) {
+    session_start();
+}
+$empresaId = isset($_SESSION['id_empresa']) ? $_SESSION['id_empresa'] : 1;
+
+// Obtener información de la empresa
+$empresaInfo = getEmpresaInfo($empresaId);
+
+// Obtener sedes de la empresa
+$sedes = getSedesByEmpresa($empresaId);
+
+// Obtener establecimientos (inicialmente todos los de la empresa)
+$establecimientos = getEstablecimientosByEmpresa($empresaId);
+
+// Obtener ID del primer establecimiento (por defecto)
+$establecimientoId = count($establecimientos) > 0 ? $establecimientos[0]['ID_ESTABLECIMIENTO'] : null;
+
+// Obtener estadísticas de asistencia
+$estadisticas = $establecimientoId ? getEstadisticasAsistencia($establecimientoId, $fechaDashboard) : null;
+
+// Obtener datos para gráfico de asistencias por hora
+$asistenciasPorHora = getAsistenciasPorHora($empresaId, $fechaDashboard);
+
+// Obtener datos para gráfico de distribución de asistencias
+$distribucionAsistencias = getDistribucionAsistencias($empresaId, $fechaDashboard);
+
+// Obtener actividad reciente
+$actividadReciente = getActividadReciente($empresaId, $fechaDashboard);
 ?>
 <!DOCTYPE html>
 <html lang="es">

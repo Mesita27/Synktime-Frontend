@@ -1,34 +1,42 @@
 <?php
-require_once '../auth/session.php';
 require_once '../config/database.php';
 
-// Verificar autenticación
-requireAuth();
+// Verificar si hay un ID de sede
+$sedeId = isset($_GET['sede_id']) ? (int)$_GET['sede_id'] : null;
 
-// Verificar que se recibió el ID de sede
-if (!isset($_GET['sede_id'])) {
-    echo json_encode(['error' => 'ID de sede no proporcionado']);
+// Verificar que tenemos un ID de sede válido
+if (!$sedeId) {
+    echo json_encode([
+        'success' => false,
+        'error' => 'No se proporcionó un ID de sede válido'
+    ]);
     exit;
 }
 
-$sedeId = (int)$_GET['sede_id'];
-
 try {
-    $conn = getConnection();
+    // Obtener establecimientos de la sede
     $stmt = $conn->prepare("
-        SELECT ID_ESTABLECIMIENTO, NOMBRE
+        SELECT ID_ESTABLECIMIENTO, NOMBRE, DIRECCION
         FROM ESTABLECIMIENTO
-        WHERE ID_SEDE = :sedeId AND ESTADO = 'A'
+        WHERE ID_SEDE = :sedeId
+        AND ESTADO = 'A'
         ORDER BY NOMBRE
     ");
+    
     $stmt->bindParam(':sedeId', $sedeId, PDO::PARAM_INT);
     $stmt->execute();
     
     $establecimientos = $stmt->fetchAll(PDO::FETCH_ASSOC);
     
-    echo json_encode(['success' => true, 'establecimientos' => $establecimientos]);
-} catch (PDOException $e) {
-    error_log("Error obteniendo establecimientos: " . $e->getMessage());
-    echo json_encode(['error' => 'Error al obtener establecimientos']);
+    // Devolver datos en formato JSON
+    echo json_encode([
+        'success' => true,
+        'establecimientos' => $establecimientos
+    ]);
+    
+} catch (Exception $e) {
+    echo json_encode([
+        'success' => false,
+        'error' => $e->getMessage()
+    ]);
 }
-?>
