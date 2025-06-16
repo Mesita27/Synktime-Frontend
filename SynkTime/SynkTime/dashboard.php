@@ -4,14 +4,33 @@ require_once 'config/database.php';
 // Incluir controlador del dashboard
 require_once 'dashboard-controller.php';
 
-// Establecer la fecha específica para pruebas
-$fechaDashboard = '2025-06-15';
-
-// Obtener ID de empresa desde la sesión
+// Iniciar sesión si no está iniciada
 if (session_status() == PHP_SESSION_NONE) {
     session_start();
 }
-$empresaId = isset($_SESSION['id_empresa']) ? $_SESSION['id_empresa'] : 1;
+
+// Obtener información del usuario logueado
+$usuarioInfo = null;
+$empresaId = 1; // Default fallback
+
+if (isset($_SESSION['username'])) {
+    $usuarioInfo = getUsuarioInfo($_SESSION['username']);
+    if ($usuarioInfo) {
+        $empresaId = $usuarioInfo['ID_EMPRESA'];
+        // Actualizar datos de sesión
+        $_SESSION['id_empresa'] = $empresaId;
+        $_SESSION['user_id'] = $usuarioInfo['ID_USUARIO']; // Para el logout
+        $_SESSION['nombre_completo'] = $usuarioInfo['NOMBRE_COMPLETO'];
+        $_SESSION['rol'] = $usuarioInfo['ROL'];
+        $_SESSION['empresa_nombre'] = $usuarioInfo['EMPRESA_NOMBRE'];
+    }
+} else {
+    // Si no hay sesión, usar valores por defecto o redireccionar al login
+    $empresaId = isset($_SESSION['id_empresa']) ? $_SESSION['id_empresa'] : 1;
+}
+
+// Usar fecha actual del sistema
+$fechaDashboard = date('Y-m-d');
 
 // Obtener información de la empresa
 $empresaInfo = getEmpresaInfo($empresaId);
@@ -19,23 +38,26 @@ $empresaInfo = getEmpresaInfo($empresaId);
 // Obtener sedes de la empresa
 $sedes = getSedesByEmpresa($empresaId);
 
-// Obtener establecimientos (inicialmente todos los de la empresa)
-$establecimientos = getEstablecimientosByEmpresa($empresaId);
+// Obtener la primera sede por defecto
+$sedeDefault = count($sedes) > 0 ? $sedes[0] : null;
+$sedeDefaultId = $sedeDefault ? $sedeDefault['ID_SEDE'] : null;
 
-// Obtener ID del primer establecimiento (por defecto)
-$establecimientoId = count($establecimientos) > 0 ? $establecimientos[0]['ID_ESTABLECIMIENTO'] : null;
+// Obtener establecimientos de la primera sede
+$establecimientos = $sedeDefaultId ? getEstablecimientosByEmpresa($empresaId, $sedeDefaultId) : [];
 
-// Obtener estadísticas de asistencia
-$estadisticas = $establecimientoId ? getEstadisticasAsistencia($establecimientoId, $fechaDashboard) : null;
+// Obtener el primer establecimiento por defecto
+$establecimientoDefault = count($establecimientos) > 0 ? $establecimientos[0] : null;
+$establecimientoDefaultId = $establecimientoDefault ? $establecimientoDefault['ID_ESTABLECIMIENTO'] : null;
 
-// Obtener datos para gráfico de asistencias por hora
-$asistenciasPorHora = getAsistenciasPorHora($empresaId, $fechaDashboard);
+// Obtener estadísticas del primer establecimiento
+$estadisticas = $establecimientoDefaultId ? getEstadisticasAsistencia($establecimientoDefaultId, $fechaDashboard) : null;
 
-// Obtener datos para gráfico de distribución de asistencias
-$distribucionAsistencias = getDistribucionAsistencias($empresaId, $fechaDashboard);
+// Obtener datos para gráficos del primer establecimiento
+$asistenciasPorHora = $establecimientoDefaultId ? getAsistenciasPorHoraEstablecimiento($establecimientoDefaultId, $fechaDashboard) : ['categories' => [], 'data' => []];
+$distribucionAsistencias = $establecimientoDefaultId ? getDistribucionAsistenciasEstablecimiento($establecimientoDefaultId, $fechaDashboard) : ['series' => [0, 0, 0]];
 
-// Obtener actividad reciente
-$actividadReciente = getActividadReciente($empresaId, $fechaDashboard);
+// Obtener actividad reciente del primer establecimiento
+$actividadReciente = $establecimientoDefaultId ? getActividadRecienteEstablecimiento($establecimientoDefaultId, $fechaDashboard) : [];
 ?>
 <!DOCTYPE html>
 <html lang="es">
@@ -72,13 +94,19 @@ $actividadReciente = getActividadReciente($empresaId, $fechaDashboard);
                     <div class="filters-section">
                         <div class="company-info">
                             <h2><?php echo htmlspecialchars($empresaInfo['NOMBRE'] ?? 'Empresa'); ?></h2>
+                            <p class="company-details">
+                                <i class="fas fa-building"></i>
+                                <?php echo htmlspecialchars($empresaInfo['RUC'] ?? 'RUC no disponible'); ?>
+                            </p>
                         </div>
                         <div class="location-filters">
                             <div class="filter-group">
                                 <label for="selectSede">Sede:</label>
                                 <select id="selectSede" class="filter-select">
                                     <?php foreach ($sedes as $sede): ?>
-                                        <option value="<?php echo $sede['ID_SEDE']; ?>"><?php echo htmlspecialchars($sede['NOMBRE']); ?></option>
+                                        <option value="<?php echo $sede['ID_SEDE']; ?>" <?php echo ($sedeDefaultId == $sede['ID_SEDE']) ? 'selected' : ''; ?>>
+                                            <?php echo htmlspecialchars($sede['NOMBRE']); ?>
+                                        </option>
                                     <?php endforeach; ?>
                                 </select>
                             </div>
@@ -87,9 +115,16 @@ $actividadReciente = getActividadReciente($empresaId, $fechaDashboard);
                                 <label for="selectEstablecimiento">Establecimiento:</label>
                                 <select id="selectEstablecimiento" class="filter-select">
                                     <?php foreach ($establecimientos as $establecimiento): ?>
-                                        <option value="<?php echo $establecimiento['ID_ESTABLECIMIENTO']; ?>"><?php echo htmlspecialchars($establecimiento['NOMBRE']); ?></option>
+                                        <option value="<?php echo $establecimiento['ID_ESTABLECIMIENTO']; ?>" <?php echo ($establecimientoDefaultId == $establecimiento['ID_ESTABLECIMIENTO']) ? 'selected' : ''; ?>>
+                                            <?php echo htmlspecialchars($establecimiento['NOMBRE']); ?>
+                                        </option>
                                     <?php endforeach; ?>
                                 </select>
+                            </div>
+                            
+                            <div class="filter-group">
+                                <label for="selectFecha">Fecha:</label>
+                                <input type="date" id="selectFecha" class="filter-select" value="<?php echo $fechaDashboard; ?>">
                             </div>
                         </div>
                     </div>
@@ -102,7 +137,7 @@ $actividadReciente = getActividadReciente($empresaId, $fechaDashboard);
                             </div>
                             <div class="stat-info">
                                 <h3>A Tiempo</h3>
-                                <div class="stat-value" id="llegadasTiempo"><?php echo $estadisticas ? $estadisticas['llegadas_tiempo'] : 0; ?></div>
+                                <div class="stat-value" id="llegadasTiempo"><?php echo $estadisticas ? ($estadisticas['llegadas_tiempo'] ?? 0) : 0; ?></div>
                                 <div class="stat-trend up">
                                     <i class="fas fa-arrow-up"></i>
                                     <span>Asistencias puntuales</span>
@@ -116,7 +151,7 @@ $actividadReciente = getActividadReciente($empresaId, $fechaDashboard);
                             </div>
                             <div class="stat-info">
                                 <h3>Llegadas Tarde</h3>
-                                <div class="stat-value" id="llegadasTarde"><?php echo $estadisticas ? $estadisticas['llegadas_tarde'] : 0; ?></div>
+                                <div class="stat-value" id="llegadasTarde"><?php echo $estadisticas ? ($estadisticas['llegadas_tarde'] ?? 0) : 0; ?></div>
                                 <div class="stat-trend down">
                                     <i class="fas fa-arrow-down"></i>
                                     <span>Registros con tardanza</span>
@@ -130,7 +165,7 @@ $actividadReciente = getActividadReciente($empresaId, $fechaDashboard);
                             </div>
                             <div class="stat-info">
                                 <h3>Faltas</h3>
-                                <div class="stat-value" id="faltas"><?php echo $estadisticas ? $estadisticas['faltas'] : 0; ?></div>
+                                <div class="stat-value" id="faltas"><?php echo $estadisticas ? ($estadisticas['faltas'] ?? 0) : 0; ?></div>
                                 <div class="stat-trend neutral">
                                     <i class="fas fa-minus"></i>
                                     <span>Ausencias registradas</span>
@@ -144,7 +179,7 @@ $actividadReciente = getActividadReciente($empresaId, $fechaDashboard);
                             </div>
                             <div class="stat-info">
                                 <h3>Horas Trabajadas</h3>
-                                <div class="stat-value" id="horasTrabajadas"><?php echo $estadisticas ? $estadisticas['horas_trabajadas'] : 0; ?></div>
+                                <div class="stat-value" id="horasTrabajadas"><?php echo $estadisticas ? ($estadisticas['horas_trabajadas'] ?? 0) : 0; ?></div>
                                 <div class="stat-trend up">
                                     <i class="fas fa-arrow-up"></i>
                                     <span>Horas productivas</span>
@@ -242,7 +277,7 @@ $actividadReciente = getActividadReciente($empresaId, $fechaDashboard);
                                         <?php endforeach; ?>
                                     <?php else: ?>
                                         <tr>
-                                            <td colspan="5" class="no-data">No hay actividad reciente para mostrar.</td>
+                                            <td colspan="5" class="no-data">No hay actividad reciente para mostrar en la fecha seleccionada.</td>
                                         </tr>
                                     <?php endif; ?>
                                 </tbody>
@@ -257,28 +292,43 @@ $actividadReciente = getActividadReciente($empresaId, $fechaDashboard);
     <!-- Scripts -->
     <script src="assets/js/layout.js"></script>
     <script>
+    // Variables globales para los datos iniciales
+    const initialData = {
+        sedeId: <?php echo json_encode($sedeDefaultId); ?>,
+        establecimientoId: <?php echo json_encode($establecimientoDefaultId); ?>,
+        fecha: <?php echo json_encode($fechaDashboard); ?>,
+        hourlyAttendanceData: <?php echo json_encode($asistenciasPorHora); ?>,
+        distributionData: <?php echo json_encode($distribucionAsistencias); ?>
+    };
+
     // Inicializar dashboard cuando el DOM esté listo
     document.addEventListener('DOMContentLoaded', function() {
         // Inicializar dashboard con datos iniciales
-        const dashboard = new Dashboard({
-            hourlyAttendanceData: <?php echo json_encode($asistenciasPorHora); ?>,
-            distributionData: <?php echo json_encode($distribucionAsistencias); ?>
-        });
+        const dashboard = new Dashboard(initialData);
         
         // Referencias a elementos del DOM
         const selectSede = document.getElementById('selectSede');
         const selectEstablecimiento = document.getElementById('selectEstablecimiento');
+        const selectFecha = document.getElementById('selectFecha');
         const llegadasTiempo = document.getElementById('llegadasTiempo');
         const llegadasTarde = document.getElementById('llegadasTarde');
         const faltas = document.getElementById('faltas');
         const horasTrabajadas = document.getElementById('horasTrabajadas');
         const activityTableBody = document.getElementById('activityTableBody');
         
+        // Configurar fecha máxima (fecha actual)
+        const today = new Date().toISOString().split('T')[0];
+        selectFecha.setAttribute('max', today);
+        
         // Evento para cambio de sede
         if (selectSede) {
             selectSede.addEventListener('change', function() {
                 const sedeId = this.value;
-                if (!sedeId) return;
+                if (!sedeId) {
+                    selectEstablecimiento.innerHTML = '<option value="">Seleccione un establecimiento</option>';
+                    limpiarEstadisticas();
+                    return;
+                }
                 
                 // Limpiar establecimientos actuales
                 selectEstablecimiento.innerHTML = '';
@@ -295,15 +345,21 @@ $actividadReciente = getActividadReciente($empresaId, $fechaDashboard);
                         
                         if (data.success && data.establecimientos && data.establecimientos.length > 0) {
                             // Agregar nuevas opciones
-                            data.establecimientos.forEach(establecimiento => {
+                            data.establecimientos.forEach((establecimiento, index) => {
                                 const option = document.createElement('option');
                                 option.value = establecimiento.ID_ESTABLECIMIENTO;
                                 option.textContent = establecimiento.NOMBRE;
+                                // Seleccionar el primer establecimiento automáticamente
+                                if (index === 0) {
+                                    option.selected = true;
+                                }
                                 selectEstablecimiento.appendChild(option);
                             });
                             
-                            // Cargar estadísticas para el primer establecimiento
-                            cargarEstadisticas(data.establecimientos[0].ID_ESTABLECIMIENTO);
+                            // Cargar estadísticas para el primer establecimiento automáticamente
+                            if (data.establecimientos.length > 0) {
+                                cargarEstadisticas(data.establecimientos[0].ID_ESTABLECIMIENTO);
+                            }
                         } else {
                             // No hay establecimientos
                             const option = document.createElement('option');
@@ -335,17 +391,34 @@ $actividadReciente = getActividadReciente($empresaId, $fechaDashboard);
             });
         }
         
+        // Evento para cambio de fecha
+        if (selectFecha) {
+            selectFecha.addEventListener('change', function() {
+                const establecimientoId = selectEstablecimiento.value;
+                if (!establecimientoId) {
+                    return;
+                }
+                
+                cargarEstadisticas(establecimientoId);
+            });
+        }
+        
         // Función para cargar estadísticas
         function cargarEstadisticas(establecimientoId) {
-            fetch(`api/get-dashboard-stats.php?establecimiento_id=${establecimientoId}`)
+            const fecha = selectFecha.value || initialData.fecha;
+            
+            // Mostrar indicador de carga
+            mostrarCargando();
+            
+            fetch(`api/get-dashboard-stats.php?establecimiento_id=${establecimientoId}&fecha=${fecha}`)
                 .then(response => response.json())
                 .then(data => {
                     if (data.success) {
                         // Actualizar tarjetas de estadísticas
-                        llegadasTiempo.textContent = data.estadisticas.llegadas_tiempo;
-                        llegadasTarde.textContent = data.estadisticas.llegadas_tarde;
-                        faltas.textContent = data.estadisticas.faltas;
-                        horasTrabajadas.textContent = data.estadisticas.horas_trabajadas;
+                        llegadasTiempo.textContent = data.estadisticas.llegadas_tiempo || 0;
+                        llegadasTarde.textContent = data.estadisticas.llegadas_tarde || 0;
+                        faltas.textContent = data.estadisticas.faltas || 0;
+                        horasTrabajadas.textContent = data.estadisticas.horas_trabajadas || 0;
                         
                         // Actualizar gráficos
                         dashboard.updateCharts(data.asistenciasPorHora, data.distribucionAsistencias);
@@ -363,6 +436,22 @@ $actividadReciente = getActividadReciente($empresaId, $fechaDashboard);
                 });
         }
         
+        // Función para mostrar indicador de carga
+        function mostrarCargando() {
+            llegadasTiempo.innerHTML = '<i class="fas fa-spinner fa-spin"></i>';
+            llegadasTarde.innerHTML = '<i class="fas fa-spinner fa-spin"></i>';
+            faltas.innerHTML = '<i class="fas fa-spinner fa-spin"></i>';
+            horasTrabajadas.innerHTML = '<i class="fas fa-spinner fa-spin"></i>';
+            
+            activityTableBody.innerHTML = `
+                <tr>
+                    <td colspan="5" class="no-data">
+                        <i class="fas fa-spinner fa-spin"></i> Cargando datos...
+                    </td>
+                </tr>
+            `;
+        }
+        
         // Función para limpiar estadísticas
         function limpiarEstadisticas() {
             llegadasTiempo.textContent = '0';
@@ -374,7 +463,7 @@ $actividadReciente = getActividadReciente($empresaId, $fechaDashboard);
             
             activityTableBody.innerHTML = `
                 <tr>
-                    <td colspan="5" class="no-data">No hay actividad reciente para mostrar.</td>
+                    <td colspan="5" class="no-data">Seleccione un establecimiento para ver la actividad.</td>
                 </tr>
             `;
         }
@@ -432,7 +521,7 @@ $actividadReciente = getActividadReciente($empresaId, $fechaDashboard);
             } else {
                 activityTableBody.innerHTML = `
                     <tr>
-                        <td colspan="5" class="no-data">No hay actividad reciente para mostrar.</td>
+                        <td colspan="5" class="no-data">No hay actividad reciente para mostrar en la fecha seleccionada.</td>
                     </tr>
                 `;
             }
@@ -446,7 +535,7 @@ $actividadReciente = getActividadReciente($empresaId, $fechaDashboard);
         }
     });
 
-    // Clase Dashboard
+    // Clase Dashboard para manejar los gráficos
     class Dashboard {
         constructor(initialData) {
             this.hourlyAttendanceChart = null;
@@ -511,6 +600,20 @@ $actividadReciente = getActividadReciente($empresaId, $fechaDashboard);
                             return value + ' empleados'
                         }
                     }
+                },
+                grid: {
+                    borderColor: '#e0e6ed',
+                    strokeDashArray: 5,
+                    xaxis: {
+                        lines: {
+                            show: true
+                        }
+                    },
+                    yaxis: {
+                        lines: {
+                            show: true
+                        }
+                    }
                 }
             };
 
@@ -526,12 +629,31 @@ $actividadReciente = getActividadReciente($empresaId, $fechaDashboard);
                 plotOptions: {
                     pie: {
                         donut: {
-                            size: '70%'
+                            size: '70%',
+                            labels: {
+                                show: true,
+                                total: {
+                                    show: true,
+                                    label: 'Total',
+                                    formatter: function (w) {
+                                        return w.globals.seriesTotals.reduce((a, b) => {
+                                            return a + b
+                                        }, 0)
+                                    }
+                                }
+                            }
                         }
                     }
                 },
                 legend: {
-                    position: 'bottom'
+                    position: 'bottom',
+                    horizontalAlign: 'center'
+                },
+                dataLabels: {
+                    enabled: true,
+                    formatter: function (val, opts) {
+                        return opts.w.config.series[opts.seriesIndex]
+                    }
                 },
                 responsive: [{
                     breakpoint: 480,
@@ -546,6 +668,7 @@ $actividadReciente = getActividadReciente($empresaId, $fechaDashboard);
                 }]
             };
 
+            // Inicializar gráficos
             this.hourlyAttendanceChart = new ApexCharts(
                 document.querySelector("#hourlyAttendanceChart"), 
                 hourlyOptions
@@ -556,11 +679,13 @@ $actividadReciente = getActividadReciente($empresaId, $fechaDashboard);
                 distributionOptions
             );
 
+            // Renderizar gráficos
             this.hourlyAttendanceChart.render();
             this.attendanceDistributionChart.render();
         }
 
         updateCharts(hourlyData, distributionData) {
+            // Actualizar gráfico de asistencias por hora
             if (this.hourlyAttendanceChart) {
                 this.hourlyAttendanceChart.updateOptions({
                     xaxis: {
@@ -573,6 +698,7 @@ $actividadReciente = getActividadReciente($empresaId, $fechaDashboard);
                 }]);
             }
 
+            // Actualizar gráfico de distribución
             if (this.attendanceDistributionChart) {
                 this.attendanceDistributionChart.updateSeries(
                     distributionData.series || [0, 0, 0]
